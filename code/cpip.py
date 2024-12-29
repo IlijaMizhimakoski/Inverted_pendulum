@@ -19,23 +19,35 @@ def enc_uint8(value):
 def enc_uint16(value):
     return bytes(ctypes.c_uint16(value))
 
+def enc_uint32(value):
+    return bytes(ctypes.c_uint32(value))
+
+
+def list_adapters():
+    for i, adapter in pysoem.find_adapters():
+        print(f'{i}: {adapter}')
+
 
 class MotorDriver:
 
-    def __init__(self, controller, limit_theta_abs=12, max_torque=300):
+    def __init__(self, e_adapter_name='default', controller=None, limit_theta_abs=12, max_torque=300):
+        if e_adapter_name == 'default':
+            self.e_adapter_name = self.decide_the_adapter().name
+        else:
+            self.e_adapter_name = e_adapter_name
         self.controller = controller
         self.limit_theta_abs = limit_theta_abs
         self.limit_delta_abs = 1
         self.max_torque = max_torque
         self._online = True
         self._balancing = False
-        adapter = self.decide_the_adapter()
-        self.init_motor_driver(adapter)
+        self.init_motor_driver()
         self.t_watchdog = threading.Thread(target=self.watchdog)
         self.t_watchdog.start()
     
     @property
     def online(self):
+        """ Acts as a turn on/off switch. """
         return self._online
 
     @online.setter
@@ -44,9 +56,8 @@ class MotorDriver:
             raise Exception('Value for online has to be of type bool.')
         self._online = value
 
-    def list_adapters(self):
-        for i, adapter in pysoem.find_adapters():
-            print(f'{i}: {adapter}')
+    def set_controller(self, controller):
+        self.controller = controller
 
     def choose_adapter(self, index):
         adapter = pysoem.find_adapters()[-1]
@@ -65,9 +76,9 @@ class MotorDriver:
             print(f'Пронајден е етернет адаптер {adapter.name}.')
             return adapter
 
-    def init_motor_driver(self, adapter):    
+    def init_motor_driver(self):    
         self.master = pysoem.Master()
-        self.master.open(adapter.name)
+        self.master.open(self.e_adapter_name)
         if self.master.config_init() > 0:
             print('Пронајден е двигателот на моторот.')
             self.master.config_map()
@@ -83,8 +94,12 @@ class MotorDriver:
         self.slave.sdo_write(CTRL_WRD, SUBINDEX, enc_uint8(7))
         self.slave.sdo_write(CTRL_WRD, SUBINDEX, enc_uint8(15))
         # target slope
-        self.slave.sdo_write(TORQUE_SLOPE, SUBINDEX, enc_uint16(1000))
+        self.slave.sdo_write(TORQUE_SLOPE, SUBINDEX, enc_uint16(250))
         self.slave.sdo_write(TARGET_TORQUE, SUBINDEX, enc_uint16(0))
+        self.set_current_theta_as_zero()
+        
+    def set_current_theta_as_zero(self):
+        self.slave.sdo_write(EXTERNAL_ENCODER, SUBINDEX, enc_uint32(0))
 
     def write_torque(self, value):
         self.slave.sdo_write(TARGET_TORQUE, SUBINDEX, enc_uint16(value))
@@ -101,8 +116,20 @@ class MotorDriver:
         angle = (s_pulses * 360 / 10000) % 360
         return angle
 
+    def read_x_encoder(self):
+        pulses = self.slave.sdo_read(MOTOR_ENCODER, SUBINDEX)
+        pulses = int.from_bytes(pulses, byteorder='little')
+        return pulses
+
+    def read_x(self):
+        """ Read x as distance in range [0, ?). """
+        u_pulses = self.read_x_encoder()
+        x = u_pulses * 40 / 1_280_000
+        return x
+
     def watchdog(self):
-        last_theta = self.read_theta()
+        """ Waits for someone to hand-balance the pendulum. """
+        self.last_theta = self.read_theta()
         while self._online:
             if self._balancing:
                 self.control_loop()
@@ -112,27 +139,33 @@ class MotorDriver:
             else:
                 theta = self.read_theta()
                 if not (45 < theta < 360-45):
-                    last_theta = theta
-                    time.sleep(1)
+                    self.last_theta = theta
+                    time.sleep(0.5)
                     continue
-                r2l_crossing = last_theta > 180 and theta <= 180
-                l2r_crossing = last_theta < 180 and theta >= 180
+                r2l_crossing = self.last_theta > 180 and theta <= 180
+                l2r_crossing = self.last_theta < 180 and theta >= 180
                 if r2l_crossing or l2r_crossing:
                     self._balancing = True
                 else:
                     time.sleep(1)
 
     def control_loop(self):
+        """ Lets the controller to control the pendulum. """
+        if self.controller is None:
+            raise Exception('Немаш поставено управувач за процесот.')
+        new_turn = True
         while self._balancing:
             theta = self.read_theta()
             delta_abs = abs(theta - 180)
             if self._balancing and delta_abs > self.limit_theta_abs:
                 return
-            torque = self.controller(self._balancing, theta)
+            torque = self.controller(theta, new_turn)
+            new_turn = False
             if torque > self.max_torque:
-                self.controller.balancing = False
+                print('Корисникот претерал со вртежниот момент.')
                 return
             self.write_torque(int(torque))
+            
             
                 
 
