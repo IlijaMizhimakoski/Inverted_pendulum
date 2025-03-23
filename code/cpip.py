@@ -68,7 +68,7 @@ class MotorDriver:
         if not e_adapters:
             raise Exception('Нема етернет адаптер.')
         elif len(e_adapters) > 1:
-            adapter = e_adapters[3]
+            adapter = e_adapters[-1]
             print(f'Пронајдени се повеќе етернет адаптери, го користиме последниот во листата {adapter.name}.')
             return adapter
         else:
@@ -156,10 +156,11 @@ class MotorDriver:
         new_turn = True
         while self._balancing:
             theta = self.read_theta()
+            x = self.read_x()
             delta_abs = abs(theta - 180)
             if self._balancing and delta_abs > self.limit_theta_abs:
                 return
-            torque = self.controller(theta, new_turn)
+            torque = self.controller(theta, x, new_turn)
             new_turn = False
             if torque > self.max_torque:
                 print('Корисникот претерал со вртежниот момент.')
