@@ -162,7 +162,7 @@ class MotorDriver:
                 return
             torque = self.controller(theta, x, new_turn)
             new_turn = False
-            if torque > self.max_torque:
+            if abs(torque) > self.max_torque:
                 print('Корисникот претерал со вртежниот момент.')
                 return
             self.write_torque(int(torque))
