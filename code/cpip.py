@@ -59,9 +59,9 @@ class MotorDriver:
     def set_controller(self, controller):
         self.controller = controller
 
-    def choose_adapter(self, index):
-        adapter = pysoem.find_adapters()[-1]
-        self.init_motor_driver(adapter)
+    def set_adapter(self, index):
+        self.e_adapter_name = pysoem.find_adapters()[index]
+        self.init_motor_driver()
                 
     def decide_the_adapter(self):
         e_adapters = [a for a in pysoem.find_adapters()]
