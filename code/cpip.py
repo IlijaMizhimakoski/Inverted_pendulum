@@ -53,7 +53,7 @@ class MotorDriver:
     @online.setter
     def online(self, value):
         if type(value) is not bool:
-            raise Exception('Value for online has to be of type bool.')
+            raise Exception('Вредноста за online променливата треба да биде од податочен тип bool.')
         self._online = value
 
     def set_controller(self, controller):
@@ -62,14 +62,19 @@ class MotorDriver:
     def choose_adapter(self, index):
         adapter = pysoem.find_adapters()[-1]
         self.init_motor_driver(adapter)
-
+                
     def decide_the_adapter(self):
         e_adapters = [a for a in pysoem.find_adapters()]
+        ind = 0
+        for i, obj in enumerate(e_adapters):
+            if "family controller" in obj.desc.decode("utf-8", errors="ignore").lower():
+                ind = i
+                
         if not e_adapters:
             raise Exception('Нема етернет адаптер.')
         elif len(e_adapters) > 1:
-            adapter = e_adapters[-1]
-            print(f'Пронајдени се повеќе етернет адаптери, го користиме последниот во листата {adapter.name}.')
+            adapter = e_adapters[ind]
+            print(f'Пронајдени се повеќе етернет адаптери, го користиме тој што содржи „family controller“ во името: {adapter.name}.')
             return adapter
         else:
             adapter = e_adapters[0]
@@ -163,23 +168,6 @@ class MotorDriver:
             torque = self.controller(theta, x, new_turn)
             new_turn = False
             if abs(torque) > self.max_torque:
-                print('Корисникот претерал со вртежниот момент.')
+                print('Надминати се min/max границите за вртлив момент.')
                 return
             self.write_torque(int(torque))
-            
-            
-                
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
